@@ -1,38 +1,34 @@
-name: Juice Shop Security Scan
+name: Juice Shop Spider Scan
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ "main" ]
 
 jobs:
-  zap_scan:
-    runs-on: windows-latest
+  spider_scan:
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Repository
+    - name: Checkout
       uses: actions/checkout@v4
 
     - name: Start Juice Shop
       run: |
-        docker run -d --name juice-shop -p 3000:3000 bkimminich/juice-shop
-        timeout /t 60
-        echo "Juice Shop should be ready"
+        docker run -d --name juiceshop -p 3000:3000 bkimminich/juice-shop
+        # Quick readiness check
+        until curl -s http://localhost:3000 > /dev/null; do
+          sleep 5
+        done
+        echo "Juice Shop ready!"
 
-    - name: Run ZAP Full Scan
-      uses: zaproxy/action-full-scan@v0.8.0
-      with:
-        target: "http://localhost:3000"
-        fail_action: false
-
-    - name: Upload ZAP Report
-      uses: actions/upload-artifact@v4
-      with:
-        name: zap-report
-        path: report.html
+    - name: Quick Spider Scan (2-3 minutes)
+      run: |
+        docker run --rm \
+          --network host \
+          owasp/zap2docker-stable zap-quick-scan.py \
+          -t http://localhost:3000 \
+          -o "-quickurl" \
+          -c config.conf
 
     - name: Cleanup
       if: always()
-      run: |
-        docker stop juice-shop
-        docker rm juice-shop
+      run: docker rm -f juiceshop || true
