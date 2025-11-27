@@ -7,29 +7,68 @@ on:
 
 jobs:
   zap_scan:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
-    - name: Checkout Repo
-      uses: actions/checkout@v3
+    - name: Checkout Repository
+      uses: actions/checkout@v4
 
-    # 1️⃣ Start Juice Shop in Docker
-    - name: Start Juice Shop
+    # 1️⃣ Start Juice Shop in Docker on Windows
+    - name: Start Juice Shop Container
       run: |
-        docker run -d -p 3000:3000 bkimminich/juice-shop
-        echo "Waiting for Juice Shop to start..."
-        sleep 25
+        docker run -d `
+          --name juice-shop `
+          -p 3000:3000 `
+          bkimminich/juice-shop:latest
+        echo "Juice Shop container started"
 
-    # 2️⃣ Run ZAP Full Scan
+    # 2️⃣ Wait for Juice Shop to be ready (Windows compatible)
+    - name: Wait for Juice Shop to be ready
+      run: |
+        $maxRetries = 30
+        $retryCount = 0
+        $isReady = $false
+        
+        while ($retryCount -lt $maxRetries -and -not $isReady) {
+          try {
+            $response = Invoke-WebRequest -Uri "http://localhost:3000" -UseBasicParsing -TimeoutSec 5
+            if ($response.StatusCode -eq 200) {
+              $isReady = $true
+              Write-Host "Juice Shop is ready!"
+              break
+            }
+          } catch {
+            Write-Host "Waiting for Juice Shop to start... ($($retryCount + 1)/$maxRetries)"
+            Start-Sleep -Seconds 5
+            $retryCount++
+          }
+        }
+        
+        if (-not $isReady) {
+          Write-Host "Juice Shop failed to start within timeout period"
+          exit 1
+        }
+
+    # 3️⃣ Run ZAP Full Scan (Windows compatible)
     - name: Run ZAP Full Scan
-      uses: zaproxy/action-full-scan@v0.4.0
+      uses: zaproxy/action-full-scan@v0.8.0
       with:
         target: "http://localhost:3000"
+        rules_file_name: ".zap/rules.tsv"
+        cmd_options: "-a"
         fail_action: false
 
-    # 3️⃣ Upload ZAP Report as artifact
+    # 4️⃣ Upload ZAP Report as artifact
     - name: Upload ZAP Report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: zap-report
+        name: zap-security-report
         path: report.html
+        retention-days: 30
+
+    # 5️⃣ Cleanup Docker container (Windows)
+    - name: Cleanup
+      if: always()
+      run: |
+        docker stop juice-shop 2>$null
+        docker rm juice-shop 2>$null
