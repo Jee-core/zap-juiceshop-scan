@@ -1,10 +1,10 @@
-name: Juice Shop Security Scan
+name: Debug ZAP Scan
 
 on:
   workflow_dispatch:
 
 jobs:
-  security_scan:
+  debug:
     runs-on: ubuntu-latest
 
     steps:
@@ -14,25 +14,36 @@ jobs:
     - name: Start Juice Shop
       run: |
         docker run -d --name juiceshop -p 3000:3000 bkimminich/juice-shop
-        echo "Waiting for Juice Shop to start..."
         sleep 60
 
-    - name: Run ZAP Scan
+    - name: Debug ZAP Output
       run: |
+        echo "Current directory contents:"
+        ls -la
+        
+        echo "Running ZAP scan..."
         docker run --rm \
           -v $(pwd):/zap/wrk/:rw \
           --network host \
           ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
           -t http://localhost:3000 \
-          -r zap-report.html \
+          -r my-report.html \
           -I
+        
+        echo "After scan directory contents:"
+        ls -la
+        
+        echo "Checking for report files:"
+        find . -name "*.html" -o -name "*.json" -o -name "*.xml"
 
-    - name: Upload Report
+    - name: Upload Any Found Reports
       uses: actions/upload-artifact@v4
       with:
-        name: security-report
-        path: zap-report.html
+        name: debug-reports
+        path: |
+          *.html
+          *.json
+          *.xml
 
     - name: Cleanup
-      if: always()
-      run: docker rm -f juiceshop || true
+      run: docker rm -f juiceshop
