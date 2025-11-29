@@ -17,7 +17,7 @@ jobs:
         echo "Waiting for Juice Shop to start..."
         sleep 60
 
-    - name: Run ZAP Baseline Scan
+    - name: Run ZAP Scan
       run: |
         docker run --rm \
           -v $(pwd):/zap/wrk/:rw \
@@ -25,19 +25,13 @@ jobs:
           ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
           -t http://localhost:3000 \
           -r zap-report.html \
-          -J zap-report.json \
-          -x zap-report.xml \
           -I
 
-    - name: Upload Security Reports
+    - name: Upload Report
       uses: actions/upload-artifact@v4
       with:
-        name: security-reports
-        path: |
-          zap-report.html
-          zap-report.json
-          zap-report.xml
-        retention-days: 30
+        name: security-report
+        path: zap-report.html
 
     - name: Cleanup
       if: always()
