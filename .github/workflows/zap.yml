@@ -1,10 +1,10 @@
-name: Debug ZAP Scan
+name: Juice Shop ZAP Scan
 
 on:
   workflow_dispatch:
 
 jobs:
-  debug:
+  zap_scan:
     runs-on: ubuntu-latest
 
     steps:
@@ -14,36 +14,88 @@ jobs:
     - name: Start Juice Shop
       run: |
         docker run -d --name juiceshop -p 3000:3000 bkimminich/juice-shop
+        echo "Waiting for Juice Shop to start..."
         sleep 60
 
-    - name: Debug ZAP Output
+    - name: Run ZAP with Configuration
       run: |
-        echo "Current directory contents:"
-        ls -la
-        
-        echo "Running ZAP scan..."
-        docker run --rm \
-          -v $(pwd):/zap/wrk/:rw \
-          --network host \
-          ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
-          -t http://localhost:3000 \
-          -r my-report.html \
-          -I
-        
-        echo "After scan directory contents:"
-        ls -la
-        
-        echo "Checking for report files:"
-        find . -name "*.html" -o -name "*.json" -o -name "*.xml"
+        # Create the ZAP configuration file with YOUR exact content
+        cat > zap-config.yaml << 'EOF'
+        env:
+          contexts:
+            - name: Juice Shop Local
+              urls:
+                - http://localhost:3000
 
-    - name: Upload Any Found Reports
+        jobs:
+          - type: passiveScan-config
+            parameters:
+              maxBodySizeInBytesToScan: 0
+              scanOnlyInScope: true
+
+          - type: spider
+            parameters:
+              context: Juice Shop Local
+              url: http://localhost:3000
+              maxDuration: 2
+              
+          - type: spiderAjax
+            parameters:
+              context: Juice Shop Local
+              url: http://localhost:3000
+              maxDuration: 2
+
+          - type: passiveScan-wait
+            parameters:
+              maxDuration: 1
+
+          - type: activeScan
+            parameters:
+              context: Juice Shop Local
+              policy: Default Policy
+              maxDuration: 1
+              
+          - type: report
+            parameters:
+              template: traditional-html
+              reportDir: reports
+              reportFileName: zap-juice-shop-report
+              
+          - type: exitStatus
+            parameters:
+              failOnWarning: true
+              failOnError: true
+              failureThreshold: FAIL
+              items:
+                - type: risk
+                  risk: High
+                  count: 0
+                - type: risk
+                  risk: Medium
+                  count: 0
+        EOF
+
+        # Run ZAP with the configuration
+        docker run --rm \
+          -v $(pwd)/zap-config.yaml:/zap/config.yaml:ro \
+          -v $(pwd):/zap/wrk \
+          --network host \
+          ghcr.io/zaproxy/zaproxy:stable zap-full-scan.py \
+          -c /zap/config.yaml
+
+        # Check if report was created
+        echo "Checking for reports:"
+        find . -name "*.html" -type f
+
+    - name: Upload ZAP Report
       uses: actions/upload-artifact@v4
       with:
-        name: debug-reports
+        name: zap-full-report
         path: |
+          zap-juice-shop-report.html
+          reports/zap-juice-shop-report.html
           *.html
-          *.json
-          *.xml
 
     - name: Cleanup
-      run: docker rm -f juiceshop
+      if: always()
+      run: docker rm -f juiceshop || true
